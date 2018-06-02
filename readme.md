@@ -1,10 +1,22 @@
 dumpcore-simple
 ===
 
-[![Build Status](https://travis-ci.org/githubuser/dumpcore-simple.png)](https://travis-ci.org/githubuser/dumpcore-simple)
+A family of GHC plugins dedicated to export compiler intermediate
+representations in a human-readable way.
 
-See https://githubuser.github.io/dumpcore-simple/index.html for project description.
+Usage instructions
+------------------
 
-~~~
-stack build --test --exec "$(stack path --local-install-root)/bin/dumpcore-simple-example" --exec "$(stack path --local-bin)/pandoc -f markdown+lhs -i app/example.lhs -t html -o index.html --filter pandoc-include --mathjax" --file-watch
-~~~
+Add the following to your stack.yaml
+
+    extra-deps:
+    - git: https://github.com/remyoudompheng/dumpcore-simple
+      commit: COMMIT_SHA1
+
+    ghc-options:
+        "$locals":
+                -fplugin=Compiler.Plugin.Trace
+                -fplugin=Compiler.Plugin.Dumpcore
+                -fplugin=Compiler.Plugin.DumpSTG
+
+Then run `stack install dumpcore-simple' and build normally.
