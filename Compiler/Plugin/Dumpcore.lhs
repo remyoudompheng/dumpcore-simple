@@ -1,4 +1,4 @@
-| A GHC plugin dumping the optimizer output (Core program)
+-| A GHC plugin dumping the optimizer output (Core program)
 with a simplified syntax in a given directory.
 
 Expected usage:
@@ -25,7 +25,6 @@ Output is named '$outdir/Module.Name.dump-core-simple'
 >   , liftIO
 >   , moduleName
 >   , moduleNameString
->   , putMsgS
 >   )
 > import Prelude hiding (mod)
 > import System.Directory
@@ -43,23 +42,20 @@ Our compiler pass will insert itself at the very end of the
 pipeline.
 
 > install :: [CommandLineOption] -> [CoreToDo] -> CoreM [CoreToDo]
-> install args passes =
->   case args of
+> install args passes = do
 
-The plugin takes a mandatory 'outdir' argument, specifying an output
-directory.
+The plugin takes an 'outdir' argument, specifying an output
+directory. Default value is "dump-simple".
 
->     outdir:_ -> do
->          let pass mod = do
->                  putMsgS "hello!"
->                  prettyprintTo outdir mod
->          return (passes ++ [ CoreDoPluginPass "DumpCore-Simple" pass ])
-
-Missing directory argument causes the plugin to be a no-op.
-
->     _ -> do
->          errorMsgS "please specify an output directory for Compiler.Plugin.Dumpcore"
->          return passes
+>    outdir <- case args of
+>               []  -> return $ Just "dump-simple"
+>               [o] -> return $ Just o
+>               _   -> errorMsgS "too many arguments in DumpCore" >> return Nothing
+>    case outdir of
+>       Nothing  -> return passes
+>       Just dir -> let pass = CoreDoPluginPass "DumpCore-Simple"
+>                            $ prettyprintTo dir
+>                   in return (passes ++ [pass])
 
 Dumped representation will be written to $outdir/Module.Name.dump-core-simple
 
@@ -67,7 +63,7 @@ Dumped representation will be written to $outdir/Module.Name.dump-core-simple
 > prettyprintTo outdir mod = liftIO $ do
 >     createDirectoryIfMissing True outdir
 >     let modName = moduleNameString $ moduleName (mg_module mod)
->         fileName = outdir </> modName <.> "dump-stg-simple"
+>         fileName = outdir </> modName <.> "dump-core-simple"
 >         rendered = T.pack $ prettySimple modName (mg_binds mod)
 >     B.writeFile fileName (TE.encodeUtf8 rendered)
 >     return mod

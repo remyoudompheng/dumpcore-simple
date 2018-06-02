@@ -38,6 +38,8 @@ library
   exposed-modules:
     Compiler.Plugin.Dumpcore,
     Compiler.Plugin.Dumpcore.Pretty,
+    Compiler.Plugin.DumpSTG,
+    Compiler.Plugin.DumpSTG.Pretty,
     Compiler.Plugin.Trace
 
   build-depends:
