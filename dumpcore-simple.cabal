@@ -32,17 +32,23 @@ extra-source-files:
 library
   default-language:
     Haskell2010
-  ghc-options:
+  ghc-options: -Wall
   hs-source-dirs:
 
   exposed-modules:
-    Dumpcore.Simple.Plugin
-
-  other-modules:
+    Compiler.Plugin.Dumpcore,
+    Compiler.Plugin.Dumpcore.Pretty,
+    Compiler.Plugin.Trace
 
   build-depends:
     base >= 4.7 && < 5,
-    ghc
+    bytestring,
+    directory,
+    filepath,
+    ghc,
+    text,
+    time,
+    pretty
 
 source-repository head
   type:
