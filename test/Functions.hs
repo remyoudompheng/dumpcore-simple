@@ -54,3 +54,6 @@ sumValues = sum . map snd . M.toList
 sumValues2 :: M.Map a Int -> Int
 sumValues2 = M.foldr (+) 0
 
+count_neq :: (Eq a) => a -> [a] -> Int
+count_neq x = let f y n = if x /= y then n+1 else n
+              in foldr f 0

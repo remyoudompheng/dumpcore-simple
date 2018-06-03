@@ -101,7 +101,7 @@ prExpr (StgLam _ _) = ([], "STGLAM??")
 -- usage/deconstruction of v
 prExpr (StgCase e v _ alts) = prCase e v alts
 prExpr (StgLet bind e) = let (bs, e') = prExpr e in ((prBinding bind):bs, e')
-prExpr (StgLetNoEscape _ _) = ([], text "NOESCAPE let")
+prExpr (StgLetNoEscape bind e) = let (bs, e') = prExpr e in (("NOESCAPE" <+> prBinding bind):bs, e')
 prExpr (StgTick _ _) = ([], empty) -- don't render ticks
 
 -- | Case
