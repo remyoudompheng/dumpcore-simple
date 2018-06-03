@@ -35,6 +35,7 @@ minStrict x y = id $! min x y
 build_data :: Int -> Maybe Int
 build_data x = Just (x + 1)
 
+-- A variant of build_data that does not create a thunk.
 build_data_strict :: Int -> Maybe Int
 build_data_strict x = Just $! (x + 1)
 
@@ -44,9 +45,12 @@ infinite = 1 : map (+1) infinite
 first_nonzero :: [Int] -> Maybe Int
 first_nonzero = listToMaybe . filter (/= 0)
 
+-- ghc 8.2 -O2 compiles it to various thunks in Map recursion
 sumValues :: M.Map a Int -> Int
 sumValues = sum . map snd . M.toList
 
+-- ghc 8.2 -O2 compiles it to a recursive computation on the map, with
+-- an unboxed accumulator.
 sumValues2 :: M.Map a Int -> Int
 sumValues2 = M.foldr (+) 0
 

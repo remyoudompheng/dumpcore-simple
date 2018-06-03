@@ -5,12 +5,15 @@ module Compiler.Plugin.DumpSTG.Pretty
   ( prettySTG ) where
 
 import qualified Data.ByteString as B
+import CoreSyn (AltCon (..))
 import Data.List (intersperse)
+import Data.Maybe (isJust)
 import Literal (Literal(..))
 import Name (NamedThing, getName)
 import StgSyn
 import Text.PrettyPrint
 import Outputable (Outputable, ppr, pprHsBytes, showSDocUnsafe)
+import PrimOp (primOpFixity)
 import qualified Var as V
 
 prettySTG :: String -> [StgTopBinding] -> String
@@ -49,7 +52,7 @@ prBytes s = text (showSDocUnsafe $ pprHsBytes s)
 -- * a constructor (StgRhsCon)
 --   v = C a1 a2
 -- * a reentrant closure (ordinary function or closure)
---   v x y = <expr>
+--   v x y = (CLOSURE captures)? <expr>
 -- * an updatable closure (lazy thunk value)
 --   it cannot have arguments, as it must be evaluated in a deterministic way.
 --   v = THUNK <expr>
@@ -57,42 +60,67 @@ prBytes s = text (showSDocUnsafe $ pprHsBytes s)
 --   PROX v x y = <expr>
 prBind :: V.Id -> StgRhs -> Doc
 prBind v (StgRhsCon _ c args) = prNamed v <+> "=" <+> prNamed c <+> hsep (map prGeneric args)
-prBind v rhs@(StgRhsClosure _ _ caps ReEntrant [] e) = prNamed v <+> "=" <+> prExpr e
-prBind v rhs@(StgRhsClosure ccs info caps ReEntrant (a:as) e) = prNamed v <+> prBind a rhs'
-    where rhs' = StgRhsClosure ccs info caps ReEntrant as e
-prBind v rhs@(StgRhsClosure ccs info caps SingleEntry args e) = prNamed v <+> "=" <+>
-    "PROC" <+> prBind v (StgRhsClosure ccs info caps ReEntrant args e)
-prBind v rhs@(StgRhsClosure ccs info caps Updatable [] e) = prNamed v <+> "=" <+>
-    "THUNK" <+> captures caps <+> prExpr e
+prBind v (StgRhsClosure _ _ [] ReEntrant [] e) = prNamed v <+> "=" <+> prTopExpr e
+prBind v (StgRhsClosure _ _ caps ReEntrant [] e) = (prNamed v <+> "=" <+> captures) $$ nest 4 (prTopExpr e)
   where
-    captures [] = empty
-    captures caps =  "{captures=" <> hsep ( punctuate comma $ map prNamed caps ) <> "}"
-prBind v rhs@(StgRhsClosure ccs info caps Updatable _ e) = error "encountered updatable thunk with args"
+    captures = "CLOSURE {captures=" <> hsep (punctuate comma $ map prNamed caps) <> "}"
+prBind v (StgRhsClosure ccs info caps ReEntrant (a:as) e) = prNamed v <+> prBind a rhs'
+    where rhs' = StgRhsClosure ccs info caps ReEntrant as e
+prBind v (StgRhsClosure ccs info caps SingleEntry args e) = prNamed v <+> "=" <+>
+    "PROC" <+> prBind v (StgRhsClosure ccs info caps ReEntrant args e)
+prBind v (StgRhsClosure _ _ caps Updatable [] e) = prNamed v <+> "=" <+>
+    "THUNK" <+> captures $$ nest 4 (prTopExpr e)
+  where
+    captures | caps == [] = empty
+             | otherwise  = "{captures=" <> hsep (punctuate comma $ map prNamed caps) <> "}"
+prBind _ (StgRhsClosure _ _ _ Updatable _ _) = error "encountered updatable thunk with args"
 
 -- | Expressions
-prExpr :: StgExpr -> Doc
+-- To reduce indentation, we put all bindings at the same level if
+-- possible.
+prTopExpr :: StgExpr -> Doc
+prTopExpr e = case prExpr e of
+                  ([], e') -> e'
+                  (binds, e') -> ("let" <+> vcat binds) $$ ("in" <+> e')
+
+prExpr :: StgExpr -> ([Doc], Doc)
 -- StgApp is ordinary application of a function.
 -- A function without arguments is just itself.
-prExpr (StgApp f []) = prNamed f
-prExpr (StgApp f args) = text "apply" <+> prNamed f <+> hsep (map prArg args)
-prExpr (StgLit l) = "LITERAL" -- prLiteral l
-prExpr (StgConApp c as _) = "CON" -- prNamed c <+> hsep (map prArg as)
-prExpr (StgOpApp _ _ _) = text "op apply"
+prExpr (StgApp f []) = ([], prNamed f)
+prExpr (StgApp f args) = ([], text "apply" <+> prNamed f <+> hsep (map prArg args))
+prExpr (StgLit l) = ([], prLiteral l)
+prExpr (StgConApp c as _) = ([], prNamed c <+> hsep (map prArg as))
+prExpr (StgOpApp (StgPrimOp op) [x,y] _)
+    -- known infix operators are shown infix
+    | isJust (primOpFixity op) = ([], prArg x <+> prGeneric op <+> prArg y)
+    | otherwise = ([], prGeneric op <+> prArg x <+> prArg y)
+prExpr e@(StgOpApp _ _ _) = ([], prGeneric e) -- FIXME? delegate to GHC
 -- StgLam is not supposed to be seen at this stage.
-prExpr (StgLam [] e) = "STGLAM??" <+> prExpr e -- FIXME ?
-prExpr (StgLam vs e) = "STGLAM??" <+> "\\" <> hsep (map prNamed vs) <+> "->" <+> prExpr e -- FIXME ?
+prExpr (StgLam _ _) = ([], "STGLAM??")
 -- StgCase is evaluation of expression 'e', followed by
 -- usage/deconstruction of v
-prExpr (StgCase e v _ _) = text "let" <+> (eval $$ cas)
-   where eval = prNamed v <+> "=" <+> "eval" <+> prExpr e
-         cas  = "case" <+> prNamed v <+> "of ..." -- TODO
-prExpr (StgLet bind e) = (text "let" <+> prBinding bind) $$ (text "in" <+> prExpr e)
-prExpr (StgLetNoEscape _ _) = text "NOESCAPE let"
-prExpr (StgTick _ _) = empty -- don't render ticks
+prExpr (StgCase e v _ alts) = prCase e v alts
+prExpr (StgLet bind e) = let (bs, e') = prExpr e in ((prBinding bind):bs, e')
+prExpr (StgLetNoEscape _ _) = ([], text "NOESCAPE let")
+prExpr (StgTick _ _) = ([], empty) -- don't render ticks
+
+-- | Case
+-- We render them as "v = eval e; case v of ..."
+-- To reduce indentation, prCase returns the list of bindings, then the
+-- final case.
+prCase :: StgExpr -> V.Var -> [StgAlt] -> ([Doc], Doc)
+prCase e v alts =
+   let eval = prNamed v <+> "=" <+> "eval" <+> prTopExpr e
+       prAlt (kind, binds, e') = prGeneric kind <+> hsep (map prNamed binds) <+> "->" <+> prTopExpr e'
+       cases = nest 4 $ vcat $ map prAlt alts
+   in case alts of
+         [] -> ([], eval)
+         [(DEFAULT, _, e')] -> let (bs, e'') = prExpr e' in (eval:bs, e'')
+         _ -> ([eval], ("case" <+> prNamed v <+> "of") $$ cases)
 
 prArg :: StgArg -> Doc
 prArg (StgVarArg v) = prNamed v
 prArg (StgLitArg l) = prLiteral l
 
 prLiteral :: Literal -> Doc
-prLiteral l = "LITERAL" -- prGeneric -- BROKEN
+prLiteral = prGeneric
