@@ -52,6 +52,25 @@ library
     time,
     pretty
 
+test-suite test
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: test.hs
+
+  other-modules: Functions
+
+  build-depends:
+      base
+    , lens
+    , tasty
+    , tasty-hunit
+    , dumpcore-simple
+
+  ghc-options: -O2
+    -ddump-simpl -ddump-stg
+    -fplugin=Compiler.Plugin.Dumpcore
+    -fplugin=Compiler.Plugin.DumpSTG
+
 source-repository head
   type:
     git
