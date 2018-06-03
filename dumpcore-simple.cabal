@@ -61,9 +61,11 @@ test-suite test
 
   build-depends:
       base
+    , containers
     , lens
     , tasty
     , tasty-hunit
+    , vector
     , dumpcore-simple
 
   ghc-options: -O2

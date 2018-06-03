@@ -12,7 +12,7 @@ main = do
 caseLens :: Assertion
 caseLens = do
     let l = [T (show x) x | x <- [0..30]]
-    sum (toListOf (traverse.world) $ f l) @?= 496
+    sum (toListOf (traverse.world) $ incWorld l) @?= 496
 
 tests :: TestTree
 tests =

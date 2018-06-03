@@ -4,6 +4,9 @@
 module Functions where
 
 import Control.Lens
+import Data.Maybe (listToMaybe)
+import qualified Data.Vector as V
+import qualified Data.Map as M
 import GHC.Generics
 import Test.Tasty.HUnit
 
@@ -15,8 +18,11 @@ data T = T { _hello :: String
 
 makeLenses ''T
 
-f :: [T] -> [T]
-f = over (traverse.world) (+ 1)
+incWorld :: [T] -> [T]
+incWorld = over (traverse.world) (+ 1)
+
+incWorldV :: V.Vector T -> V.Vector T
+incWorldV = over (traverse.world) (+ 1)
 
 -- minLazy creates a thunk
 minLazy :: Int -> Int -> Int
@@ -31,3 +37,16 @@ build_data x = Just (x + 1)
 
 build_data_strict :: Int -> Maybe Int
 build_data_strict x = Just $! (x + 1)
+
+infinite :: [Int]
+infinite = 1 : map (+1) infinite
+
+first_nonzero :: [Int] -> Maybe Int
+first_nonzero = listToMaybe . filter (/= 0)
+
+sumValues :: M.Map a Int -> Int
+sumValues = sum . map snd . M.toList
+
+sumValues2 :: M.Map a Int -> Int
+sumValues2 = M.foldr (+) 0
+
