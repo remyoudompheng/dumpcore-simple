@@ -10,6 +10,7 @@
 module Compiler.Plugin.DumpSTG (plugin) where
 
 import Compiler.Plugin.DumpSTG.Pretty
+import CorePrep (corePrepPgm)
 import CoreToStg (coreToStg)
 import qualified Data.ByteString as B
 import qualified Data.Text as T
@@ -19,10 +20,12 @@ import GhcPlugins
   , CoreToDo (..)
   , CommandLineOption
   , ModGuts (..)
+  , ModLocation (..)
   , Plugin (..)
   , defaultPlugin
   , errorMsgS
   , getDynFlags
+  , getHscEnv
   , liftIO
   , moduleName
   , moduleNameString
@@ -53,9 +56,23 @@ prettyprintTo :: FilePath -> ModGuts -> CoreM ModGuts
 prettyprintTo outdir mod = do
     liftIO $ createDirectoryIfMissing True outdir
     dynFlags <- getDynFlags
-    let modName = moduleNameString $ moduleName (mg_module mod)
+    ghcEnv <- getHscEnv
+    let ModGuts { mg_module=gutsModule
+                , mg_binds=gutsProg
+                , mg_tcs=tycons
+                } = mod
+        modName = moduleNameString $ moduleName gutsModule
         fileName = outdir </> modName <.> "dump-stg-simple"
-        stgProg = coreToStg dynFlags (mg_module mod) (mg_binds mod)
+        dummyLoc = ModLocation Nothing "dummy.hi" "dummy.o"
+    -- plugins only run during the Core2Core compiling phase.
+    -- So we need to run the backend ourselves (see hscGenHardCode in GHC)
+
+    -- Run final Core preparation: this is where eta-expansion happens.
+    -- If we don't run it, the STG output will show top-level functions
+    -- as "f = THUNK" instead of "f args = expr"
+    -- beware: in GHC 8.4 corePrepPgm returns a tuple
+    coreProg <- liftIO $ corePrepPgm ghcEnv gutsModule dummyLoc gutsProg tycons
+    let stgProg = coreToStg dynFlags (mg_module mod) coreProg
         rendered = T.pack $ prettySTG modName stgProg
     liftIO $ B.writeFile fileName (TE.encodeUtf8 rendered)
     return mod
